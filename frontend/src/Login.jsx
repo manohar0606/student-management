@@ -18,6 +18,10 @@ export default function Login({ onLogin, onShowRegister }) {
         body: JSON.stringify({ email, password }),
       });
 
+      if (!result || !result.access_token) {
+  throw new Error("Login succeeded, but no access token was received.");
+}
+
       onLogin(result.access_token);
     } catch (err) {
       setError(err.message || "Login failed. Please try again.");

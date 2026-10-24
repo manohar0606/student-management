@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -112,6 +113,7 @@ async def forward_request(
         async with httpx.AsyncClient(
             timeout=30.0
         ) as client:
+            body = await request.body()
             upstream = await client.request(
                 method=request.method,
                 url=target_url,
@@ -127,7 +129,7 @@ async def forward_request(
             if key.lower() not in HOP_BY_HOP_HEADERS
         }
 
-        # Return the actual response body and status from the service
+        # Return the service response and its status code
         return Response(
             content=upstream.content,
             status_code=upstream.status_code,
@@ -215,7 +217,7 @@ async def student_proxy(
 @app.api_route(
     "/courses/{path:path}",
     methods=[
-        "GET", "PUT", "PATCH",
+        "GET", "POST", "PUT", "PATCH",
         "DELETE", "OPTIONS",
     ],
 )

@@ -26,3 +26,17 @@ class CourseResponse(BaseModel):
     description: str | None
     duration: str
     department: str
+
+class EnrollmentCreate(BaseModel):
+    student_id: int = Field(gt=0)
+    course_id: int = Field(gt=0)
+
+
+class EnrollmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    student_id: int
+    course_id: int
+    student_name: str | None
+    student_email: str | None

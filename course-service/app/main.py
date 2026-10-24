@@ -1,5 +1,6 @@
 from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy.orm import Session
+import httpx
 
 from . import models, schemas
 from .database import Base, engine, get_db
@@ -137,3 +138,109 @@ def delete_course(course_id: int, db: Session = Depends(get_db)):
     db.delete(course)
     db.commit()
     return None
+
+@app.post(
+    "/courses/{course_id}/enrollments",
+    response_model=schemas.EnrollmentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def enroll_student(
+    course_id: int,
+    enrollment: schemas.EnrollmentCreate,
+    db: Session = Depends(get_db),
+):
+    # Check that the course exists
+    course = (
+        db.query(models.Course)
+        .filter(models.Course.id == course_id)
+        .first()
+    )
+
+    if course is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found",
+        )
+
+    # Verify the student through the Student Service
+    try:
+        response = httpx.get(
+            f"http://127.0.0.1:8002/students/{enrollment.student_id}",
+            timeout=5.0,
+        )
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Student Service is unavailable",
+        )
+
+    if response.status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not verify student with Student Service",
+        )
+
+    student = response.json()
+
+    # Prevent duplicate enrollment
+    existing = (
+        db.query(models.Enrollment)
+        .filter(
+            models.Enrollment.student_id == enrollment.student_id,
+            models.Enrollment.course_id == course_id,
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Student is already enrolled in this course",
+        )
+
+    new_enrollment = models.Enrollment(
+        student_id=enrollment.student_id,
+        course_id=course_id,
+        student_name=student["name"],
+        student_email=student["email"],
+    )
+
+    db.add(new_enrollment)
+    db.commit()
+    db.refresh(new_enrollment)
+
+    return new_enrollment
+
+
+@app.get(
+    "/courses/{course_id}/students",
+    response_model=list[schemas.EnrollmentResponse],
+)
+def get_enrolled_students(
+    course_id: int,
+    db: Session = Depends(get_db),
+):
+    course = (
+        db.query(models.Course)
+        .filter(models.Course.id == course_id)
+        .first()
+    )
+
+    if course is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found",
+        )
+
+    return (
+        db.query(models.Enrollment)
+        .filter(models.Enrollment.course_id == course_id)
+        .order_by(models.Enrollment.id)
+        .all()
+    )
